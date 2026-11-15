@@ -49,7 +49,10 @@ logged only (no limit is stated on the current /build).
    `POST https://api.kurier.xyz/api/v1/submit-proof/${KURIER_API_KEY}` with
    `{proofType:"groth16", vkRegistered:true, proofOptions:{library:"snarkjs",
    curve:"bn128"}, proofData:{proof, publicSignals, vk:"0x6b79…d77b0"}}`,
-   then poll until `Finalized` (Submitted → IncludedInBlock → Finalized).
+   then poll the job status and return as soon as a tx hash exists
+   (`IncludedInBlock`, ~3 s — the hash is final-shaped already; `Finalized`
+   follows at ~25 s with the same hash, past the platform's ~30 s delivery
+   timeout, so it is never awaited in-request).
    Submitting outside this flow = disqualification per the rules.
    No `KURIER_API_KEY` (local dev): decision returns with the proof present,
    `proof_tx: null`, and a MISSING_VERIFICATION risk is logged — never a crash.
@@ -101,24 +104,29 @@ exactly the shape the schema rule prescribes for a failed proof.
   signature, signed valid task, all trap classes, HMAC failure → 401,
   unsigned → 401, replay → PROOF_REPLAY, tampered proof → verify false.
   Response times 241–961 ms (deadline 60 s).
+- **Live practice task PASSED (2026-11-15)**: platform verdict
+  "CORRECT DECISION" — REJECT / `AMOUNT_OVERFLOW` as expected, proof
+  **VERIFIED**, platform latency **4,945 ms**, response carried a real
+  `proof_tx`. The first practice attempt exposed the platform's ~30 s
+  delivery timeout (see below); the fix is in `lib/kurier.js`.
+- **Kurier live submission measured from the deployment host**: submit
+  +0.7 s → `IncludedInBlock` +2.9 s **with txHash already present** →
+  `Finalized` +24.9 s (same txHash). The agent therefore returns at
+  IncludedInBlock; waiting for Finalized (~25 s) is what blew the
+  platform's ~30 s delivery window on the first practice attempt.
 
-## What is UNPROVEN / UNKNOWN (resolve before a live round)
+## What is UNPROVEN / UNKNOWN
 
-1. **Kurier live submission** — code follows the specified request shape and
-   state names, but has never run with a real key: the submit response's
-   job-id field, the job-status poll URL shape, and the finalized tx-hash
-   field name are best-effort (`jobId|id`, `txHash|transactionHash|proofTx`).
-2. **task_id → circuit `taskId` mapping** — heuristic (first integer group);
-   platform derivation unpublished.
-3. **HMAC secret encoding** — raw utf8 assumed; hex switchable via
-   `AGENT_GAMES_HMAC_SECRET_HEX=1`. Any signature prefix is stripped if present.
-4. **Response strictness** — we send both documented shapes plus
-   `public_signals`/`submission_status`; whether the platform rejects extra
-   fields is unknown.
-5. **Salt expectation** — fresh random salt per task; any platform-issued
+1. **task_id → circuit `taskId` mapping** — heuristic (first integer group);
+   platform derivation unpublished. Practice task IDs carry no integer
+   group, so practice could not test this; it only matters for competition
+   tasks, whose proofs the platform checks against the task.
+2. **HMAC secret encoding** — raw utf8 assumed and **validated live**
+   (signed preflight passed, practice task signature accepted); the hex
+   variant (`AGENT_GAMES_HMAC_SECRET_HEX=1`) remains untested.
+3. **Response strictness** — we send both documented shapes plus
+   `public_signals`/`submission_status`; the practice channel accepted
+   them. Whether competition scoring treats any extra field differently
+   is unknown.
+4. **Salt expectation** — fresh random salt per task; any platform-issued
    salt requirement is unknown.
-6. **Kurier key** — not yet configured on the live deployment; until it is,
-   live responses carry the proof with `proof_tx: null` (same shape as local
-   dev). Key + restart happen between rounds, never during one.
-7. **Practice tasks** — not yet run at time of writing; the live rounds are
-   the first platform tasks this agent will answer.
