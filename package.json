@@ -1,0 +1,14 @@
+{
+  "name": "gatekeeper-agent",
+  "version": "0.1.0",
+  "private": true,
+  "type": "commonjs",
+  "dependencies": {
+    "snarkjs": "^0.7.6"
+  },
+  "scripts": {
+    "start": "node agent.js",
+    "selftest": "node selftest.js",
+    "probe": "node probe_signals.js"
+  }
+}
